@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+
+set MAC_Snsr [lindex $argv 0]
+set MAC_BB [lindex $argv 1]
+set timeout -1
+
+#execute bluetoothctl
+spawn bluetoothctl 
+
+#turn on bluetooth
+expect "*bluetooth]? "
+send -- "select $MAC_BB\r"
+send -- "power on\r"
+send -- "agent on\r"
+expect "*Agent registered\r"
+
+#pair and disconnect sensors
+send -- "info $MAC_Snsr\r"
+expect {
+"*Paired:?no*\r" {
+send "pair $MAC_Snsr\r"
+expect "*Pairing successful*\r"
+send -- "disconnect $MAC_Snsr\r"
+}
+"*Paired:?yes*\r" {
+send -- "disconnect $MAC_Snsr\r"
+}
+}
+
+#return on success
+expect "*Successful disconnected*\r"
+#output our BeagleBone's final status
+send -- "info $MAC_Snsr\r"
+send -- "exit\r"
+expect eof
