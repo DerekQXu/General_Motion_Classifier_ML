@@ -1,10 +1,8 @@
-// Standard Implementation of Queue with LL
-// added denQueue function
-
 #ifndef QUEUE_H
 #define QUEUE_H
 #include <stdlib.h>
 
+//Linked Lists implementation of Queue Data-Structure
 struct QNode
 {
 	float key;

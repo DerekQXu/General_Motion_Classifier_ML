@@ -18,6 +18,7 @@
 #define QUEUE_MAX 100
 
 int i;
+int *state_machine;
 pid_t pid_setup = 123;
 pid_t pid_sensing = 123;
 pid_t pid_parsing = 123;
@@ -68,17 +69,7 @@ void parseSTM(){
 	{
 		FILE* ble_file;
 		ble_file = fopen("motion_data.txt", "r");
-
-		out_ax = createQueue();
-		out_ay = createQueue();
-		out_az = createQueue();
-		out_gx = createQueue();
-		out_gy = createQueue();
-		out_gz = createQueue();
-		out_mx = createQueue();
-		out_my = createQueue();
-		out_mz = createQueue();
-		printf("%f", getElt(out_ax,0));
+		init_parsing();
 
 		char raw[BUFF_MAX];
 
@@ -95,9 +86,15 @@ void parseSTM(){
 		}
 		// Maintain queue size, QUEUE_MAX
 		while(1){
-			if(fgets(raw, BUFF_MAX, ble_file)){
-				if(stream_parser(raw, denQueue) == 0){ return; }
-				//printf("%f\n", getElt(out_ax,3));
+			switch(*state_machine){
+			case 0:
+				if(fgets(raw, BUFF_MAX, ble_file)){
+					if(stream_parser(raw, denQueue) == 0){ return; }
+				}
+				break;
+			default:
+				destr_parsing();
+				return;
 			}
 		}
 	}
@@ -118,9 +115,11 @@ int main(int argc, char **argv)
 		printf("Error: Maxmimum number of classifications is 10\n");
 		return 0;
 	}
+	state_machine = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+	*state_machine = 0;
 
 	// Enable Bluetooth Low Energy Connection
-	setupBLE();
+	setupBLE(); //spawns new process to do this.
 	if (pid_setup == 0){ return; }
 
 	// Ask for training motion names (i.e. circle triangle square none)
@@ -133,29 +132,28 @@ int main(int argc, char **argv)
 	printf("setup complete!\n");
 
 	// Initiate data collection
-	enableSTM();
+	enableSTM(); //spawns new process to do this.
 	if (pid_sensing == 0){ return; }
 
 	// Initiate data parsing
-	parseSTM();
-	sleep(10);
+	pid_parsing=fork(); //spawns new process to do this.
+	if (pid_parsing == 0) { return; }
 
-	// TODO: Check here for seg fault
+	// Notify child process for instructions
+	printf("Type [Enter] to save files for training sample 1/1.\n");
+	fflush(stdin);
+	getchar(); getchar();
+	*state_machine = 1;	
+	printf("Type [Enter] to stop recording.\n");
+	fflush(stdin);
+	getchar();
+	*state_machine = 2;	
+	printf("Cleaning up residual files.\n");
+
+	// TODO: change this to waitpid
+	sleep(3);
 	kill(pid_sensing, SIGKILL);
 	kill(pid_parsing, SIGKILL);
-	int ret = 1;
-
-	while (ret != 0){
-		deQueue(out_ax);	
-		deQueue(out_ay);	
-		deQueue(out_az);	
-		deQueue(out_gx);	
-		deQueue(out_gy);	
-		deQueue(out_gz);	
-		deQueue(out_mx);	
-		deQueue(out_my);	
-		ret = deQueue(out_mz);	
-	}
 
 	printf("Program Exit Successful!\n");
 }

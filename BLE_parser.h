@@ -1,4 +1,4 @@
-// Modified from Charles Zaloom's BLE_parser.c
+//BLE_parser.h
 #ifndef BLE_parser
 #define BLE_parser
 
@@ -135,5 +135,31 @@ int stream_parser(char raw[BUFF_MAX], void (*queue_func)(struct Queue*, float)){
 		index += 4;
 	}
 	return 1;
+}
+
+void init_parsing() {
+	out_ax = createQueue();
+	out_ay = createQueue();
+	out_az = createQueue();
+	out_gx = createQueue();
+	out_gy = createQueue();
+	out_gz = createQueue();
+	out_mx = createQueue();
+	out_my = createQueue();
+	out_mz = createQueue();
+}
+void destr_parsing() {
+	int ret = 1;
+	while (ret != 0){
+		deQueue(out_ax);	
+		deQueue(out_ay);	
+		deQueue(out_az);	
+		deQueue(out_gx);	
+		deQueue(out_gy);	
+		deQueue(out_gz);	
+		deQueue(out_mx);	
+		deQueue(out_my);	
+		ret = deQueue(out_mz);	
+	}
 }
 #endif
