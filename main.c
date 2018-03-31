@@ -14,10 +14,10 @@
 #include "BLE_parser.h"
 
 #define MAX_CLASSIF 10
-#define MAX_NAME_LEN 18 
+#define MAX_NAME_LEN 12 
 #define QUEUE_MAX 100 // MUST BE LARGER THAN 20 DUE TO GRAVITY
 
-int i;
+int i, j;
 int *state_machine;
 int *semaphore;
 pid_t pid_setup = 123;
@@ -81,8 +81,7 @@ void parseSTM(){
 	pid_parsing=fork();
 	if (pid_parsing == 0)
 	{
-		FILE* ble_file;
-		ble_file = fopen("motion_data.txt", "r");
+		FILE *ble_file = fopen("motion_data.txt", "r");
 		init_parsing();
 
 		char raw[BUFF_MAX];
@@ -121,7 +120,7 @@ void parseSTM(){
 				mz = out_mz->front;
 				output = fopen("output.csv", "w");
 				for (i = 0; i < QUEUE_MAX; ++i){
-					fprintf(output,"%f %f %f %f %f %f %f %f %f\n",ax->key,ay->key,az->key,gx->key,gy->key,gz->key,mx->key,my->key,mz->key);
+					fprintf(output,"%f,%f,%f,%f,%f,%f,%f,%f,%f\n",ax->key,ay->key,az->key,gx->key,gy->key,gz->key,mx->key,my->key,mz->key);
 					ax = ax->next;
 					ay = ay->next;
 					az = az->next;
@@ -160,6 +159,7 @@ int main(int argc, char **argv)
 		printf("Error: Maxmimum number of classifications is 10\n");
 		return 0;
 	}
+	int dataset_size;
 	// State Machine to keep track of program progress
 	state_machine = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 	*state_machine = 0;
@@ -171,12 +171,15 @@ int main(int argc, char **argv)
 	if (pid_setup == 0){ return; }
 
 	// Ask for training motion names (i.e. circle triangle square none)
-	printf("Please keep the names of motion unique and below 18 characters.\n");
+	printf("Please keep the names of motion unique and below 12 characters.\n");
 	for (i = 0; i < classif_num; ++i){
 		printf("What is the name of the motion %d/%d?\n",i+1,classif_num);
 		fflush(stdin);
 		scanf("%s", classif_names[i]);
 	}
+	printf("Collect how many data samples per motion?\n");
+	fflush(stdin);
+	scanf("%d", &dataset_size);
 	printf("setup complete!\n");
 
 	// Initiate data collection
@@ -189,15 +192,26 @@ int main(int argc, char **argv)
 	printf("Collecting buffered data...\n");
 	while (*semaphore == 1){ ; } //TODO: change this to actual semaphore
 
-	// Save .csv file
-	printf("Type [Enter] to save files for training sample 1/1.\n");
+	// clear input buffer
 	fflush(stdin);
-	getchar(); getchar();
+	getchar();
 
-	*semaphore = 1;	
-	*state_machine = 1;	
-	printf("Creating csv file...\n");
-	while (*semaphore == 1){ ; }
+	// Create the .csv files
+	char output_path [MAX_NAME_LEN+20];
+	for (i = 0; i < classif_num; ++i){
+		for (j = 0; j < dataset_size; ++j){
+			printf("Type [Enter] to save files for training sample %d/%d [%s].\n", j+1, dataset_size, classif_names[i]);
+			fflush(stdin);
+			getchar();
+
+			*semaphore = 1;	
+			*state_machine = 1;	
+			printf("Creating csv file...\n");
+			sprintf(output_path, "./training_set/%s%d.csv", classif_names[i],j);
+			while (*semaphore == 1){ ; }
+			rename("output.csv",output_path);
+		}
+	}
 
 	// Exit Program
 	printf("Type [Enter] to stop recording.\n");
