@@ -15,14 +15,26 @@
 
 #define MAX_CLASSIF 10
 #define MAX_NAME_LEN 18 
-#define QUEUE_MAX 100
+#define QUEUE_MAX 100 // MUST BE LARGER THAN 20 DUE TO GRAVITY
 
 int i;
 int *state_machine;
+int *semaphore;
 pid_t pid_setup = 123;
 pid_t pid_sensing = 123;
 pid_t pid_parsing = 123;
+struct QNode *ax;
+struct QNode *ay;
+struct QNode *az;
+struct QNode *gx;
+struct QNode *gy;
+struct QNode *gz;
+struct QNode *mx;
+struct QNode *my;
+struct QNode *mz;
+FILE *output;
 
+// Automated BLE Connection
 void setupBLE()
 {
 	// Run bctl_auto.sh
@@ -35,6 +47,7 @@ void setupBLE()
 	}
 }
 
+// BlueZ Data Collection
 void enableSTM()
 {
 	// Run gattool
@@ -62,6 +75,7 @@ void enableSTM()
 	}
 }
 
+// Parsing HEX data
 void parseSTM(){
 	//Parsing from HEX to decimal
 	pid_parsing=fork();
@@ -80,10 +94,12 @@ void parseSTM(){
 		for (i = 0; i < QUEUE_MAX; ++i){
 			//update Queue on arrival of new data
 			if (fgets(raw, BUFF_MAX, ble_file)){
-				// stream_parser modified for Queues
-				if(stream_parser(raw, enQueue) == 0){ return; }		
+				if(stream_parser(raw, enQueue) == 0){ return; } // stream_parser modified for Queues	
 			}
+			else{ --i; }
 		}
+		*semaphore = 0; //notify parent process queue of size QUEUE_MAX 
+
 		// Maintain queue size, QUEUE_MAX
 		while(1){
 			switch(*state_machine){
@@ -92,8 +108,36 @@ void parseSTM(){
 					if(stream_parser(raw, denQueue) == 0){ return; }
 				}
 				break;
+			case 1:
+				// save current queue to csv file
+				ax = out_ax->front;
+				ay = out_ay->front;
+				az = out_az->front;
+				gx = out_gx->front;
+				gy = out_gy->front;
+				gz = out_gz->front;
+				mx = out_mx->front;
+				my = out_my->front;
+				mz = out_mz->front;
+				output = fopen("output.csv", "w");
+				for (i = 0; i < QUEUE_MAX; ++i){
+					fprintf(output,"%f %f %f %f %f %f %f %f %f\n",ax->key,ay->key,az->key,gx->key,gy->key,gz->key,mx->key,my->key,mz->key);
+					ax = ax->next;
+					ay = ay->next;
+					az = az->next;
+					gx = gx->next;
+					gy = gy->next;
+					gz = gz->next;
+					mx = mx->next;
+					my = my->next;
+					mz = mz->next;
+				}
+				fclose(output);
+				*semaphore = 0; // notify parent process file safly written
+				*state_machine = 0; // return to parsing 
+				break;
 			default:
-				destr_parsing();
+				destr_parsing(); //free memory
 				return;
 			}
 		}
@@ -109,14 +153,18 @@ int main(int argc, char **argv)
 
 	// Initialize values
 	// float cutoff_freq = atof(argv[1]); <- deprecated, cutoff hardcoded now
+	// Classification values for ML System
 	char classif_names[MAX_CLASSIF][MAX_NAME_LEN+1];
 	int classif_num = atoi(argv[1]);
 	if (classif_num > MAX_CLASSIF){
 		printf("Error: Maxmimum number of classifications is 10\n");
 		return 0;
 	}
+	// State Machine to keep track of program progress
 	state_machine = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 	*state_machine = 0;
+	semaphore = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+	*semaphore = 1;
 
 	// Enable Bluetooth Low Energy Connection
 	setupBLE(); //spawns new process to do this.
@@ -136,24 +184,31 @@ int main(int argc, char **argv)
 	if (pid_sensing == 0){ return; }
 
 	// Initiate data parsing
-	pid_parsing=fork(); //spawns new process to do this.
+	parseSTM(); //spawns new process to do this.
 	if (pid_parsing == 0) { return; }
+	printf("Collecting buffered data...\n");
+	while (*semaphore == 1){ ; } //TODO: change this to actual semaphore
 
-	// Notify child process for instructions
+	// Save .csv file
 	printf("Type [Enter] to save files for training sample 1/1.\n");
 	fflush(stdin);
 	getchar(); getchar();
+
+	*semaphore = 1;	
 	*state_machine = 1;	
+	printf("Creating csv file...\n");
+	while (*semaphore == 1){ ; }
+
+	// Exit Program
 	printf("Type [Enter] to stop recording.\n");
 	fflush(stdin);
 	getchar();
-	*state_machine = 2;	
-	printf("Cleaning up residual files.\n");
 
-	// TODO: change this to waitpid
-	sleep(3);
+	*state_machine = 2;	
+
+	// Wait for child processes to finish
+	waitpid(pid_parsing, &i, 0);
 	kill(pid_sensing, SIGKILL);
-	kill(pid_parsing, SIGKILL);
 
 	printf("Program Exit Successful!\n");
 }
