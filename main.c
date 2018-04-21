@@ -15,7 +15,7 @@
 
 #define MAX_CLASSIF 10
 #define MAX_NAME_LEN 12 
-#define QUEUE_MAX 100 // MUST BE LARGER THAN 20 DUE TO GRAVITY
+
 
 int i, j;
 int *state_machine;
@@ -23,15 +23,6 @@ int *semaphore;
 pid_t pid_setup = 123;
 pid_t pid_sensing = 123;
 pid_t pid_parsing = 123;
-struct QNode *ax;
-struct QNode *ay;
-struct QNode *az;
-struct QNode *gx;
-struct QNode *gy;
-struct QNode *gz;
-struct QNode *mx;
-struct QNode *my;
-struct QNode *mz;
 FILE *output;
 
 // Automated BLE Connection
@@ -109,27 +100,9 @@ void parseSTM(){
 				break;
 			case 1:
 				// save current queue to csv file
-				ax = out_ax->front;
-				ay = out_ay->front;
-				az = out_az->front;
-				gx = out_gx->front;
-				gy = out_gy->front;
-				gz = out_gz->front;
-				mx = out_mx->front;
-				my = out_my->front;
-				mz = out_mz->front;
 				output = fopen("output.csv", "w");
 				for (i = 0; i < QUEUE_MAX; ++i){
-					fprintf(output,"%f,%f,%f,%f,%f,%f,%f,%f,%f\n",ax->key,ay->key,az->key,gx->key,gy->key,gz->key,mx->key,my->key,mz->key);
-					ax = ax->next;
-					ay = ay->next;
-					az = az->next;
-					gx = gx->next;
-					gy = gy->next;
-					gz = gz->next;
-					mx = mx->next;
-					my = my->next;
-					mz = mz->next;
+					fprintf(output,"%f,%f,%f,%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i),getElt(az,i),getElt(gx,i),getElt(gy,i),getElt(gz,i),getElt(mx,i),getElt(my,i),getElt(mz,i));
 				}
 				fclose(output);
 				*semaphore = 0; // notify parent process file safly written

@@ -5,18 +5,40 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
+#include <complex.h>
+#include <liquid/liquid.h>
 
 #define BUFF_MAX 256
+#define QUEUE_MAX 100 // MUST BE LARGER THAN 20 DUE TO GRAVITY
 
-struct Queue *out_ax;
-struct Queue *out_ay;
-struct Queue *out_az;
-struct Queue *out_gx;
-struct Queue *out_gy;
-struct Queue *out_gz;
-struct Queue *out_mx;
-struct Queue *out_my;
-struct Queue *out_mz;
+struct Queue *ax;
+struct Queue *ay;
+struct Queue *az;
+struct Queue *gx;
+struct Queue *gy;
+struct Queue *gz;
+struct Queue *mx;
+struct Queue *my;
+struct Queue *mz;
+float complex filter_in;
+float complex filter_out;
+iirfilt_crcf filter_ax;
+iirfilt_crcf filter_ay;
+iirfilt_crcf filter_az;
+
+struct filter_options {
+	// options
+	unsigned int order; 					// filter order
+	float        fc;    					// cutoff frequency
+	float        f0;    					// center frequency
+	float        Ap;    					// pass-band ripple
+	float        As;    					// stop-band attenuation
+	liquid_iirdes_filtertype ftype;  		// filter type
+	liquid_iirdes_bandtype   btype; 		// bandtype 
+	liquid_iirdes_format     format; 		// coefficient format
+};
+
 
 int char_to_decimal(char letter){
 	switch(letter){
@@ -103,31 +125,37 @@ int stream_parser(char raw[BUFF_MAX], void (*queue_func)(struct Queue*, float)){
 				//sensortile.timestamp = hex_to_decimal_time(&data[y]);
 				break;
 			case 1:
-				(*queue_func)(out_ax, (float)(hex_to_decimal_4bit(&data[index]))); 
+				filter_in = (float)(hex_to_decimal_4bit(&data[index]));
+				iirfilt_crcf_execute(filter_ax, filter_in, &filter_out);
+				(*queue_func)(ax, filter_out); 
 				break;
 			case 2:
-				(*queue_func)(out_ay, (float)(hex_to_decimal_4bit(&data[index]))); 
+				filter_in = (float)(hex_to_decimal_4bit(&data[index]));
+				iirfilt_crcf_execute(filter_ay, filter_in, &filter_out);
+				(*queue_func)(ay, filter_out); 
 				break;
 			case 3:
-				(*queue_func)(out_az, (float)(hex_to_decimal_4bit(&data[index]))); 
+				filter_in = (float)(hex_to_decimal_4bit(&data[index]));
+				iirfilt_crcf_execute(filter_az, filter_in, &filter_out);
+				(*queue_func)(az, filter_out); 
 				break;
 			case 4:
-				(*queue_func)(out_gx, (float)(hex_to_decimal_4bit(&data[index]))); 
+				(*queue_func)(gx, (float)(hex_to_decimal_4bit(&data[index]))); 
 				break;
 			case 5:
-				(*queue_func)(out_gy, (float)(hex_to_decimal_4bit(&data[index]))); 
+				(*queue_func)(gy, (float)(hex_to_decimal_4bit(&data[index]))); 
 				break;
 			case 6: 
-				(*queue_func)(out_gz, (float)(hex_to_decimal_4bit(&data[index]))); 
+				(*queue_func)(gz, (float)(hex_to_decimal_4bit(&data[index]))); 
 				break;
 			case 7:
-				(*queue_func)(out_mx, (float)(hex_to_decimal_4bit(&data[index]))); 
+				(*queue_func)(mx, (float)(hex_to_decimal_4bit(&data[index]))); 
 				break;
 			case 8:
-				(*queue_func)(out_my, (float)(hex_to_decimal_4bit(&data[index]))); 
+				(*queue_func)(my, (float)(hex_to_decimal_4bit(&data[index]))); 
 				break;
 			case 9: 
-				(*queue_func)(out_mz, (float)(hex_to_decimal_4bit(&data[index]))); 
+				(*queue_func)(mz, (float)(hex_to_decimal_4bit(&data[index]))); 
 				break;
 			default:
 				return 0;
@@ -138,28 +166,42 @@ int stream_parser(char raw[BUFF_MAX], void (*queue_func)(struct Queue*, float)){
 }
 
 void init_parsing() {
-	out_ax = createQueue();
-	out_ay = createQueue();
-	out_az = createQueue();
-	out_gx = createQueue();
-	out_gy = createQueue();
-	out_gz = createQueue();
-	out_mx = createQueue();
-	out_my = createQueue();
-	out_mz = createQueue();
+	ax = createQueue(QUEUE_MAX);
+	ay = createQueue(QUEUE_MAX);
+	az = createQueue(QUEUE_MAX);
+	gx = createQueue(QUEUE_MAX);
+	gy = createQueue(QUEUE_MAX);
+	gz = createQueue(QUEUE_MAX);
+	mx = createQueue(QUEUE_MAX);
+	my = createQueue(QUEUE_MAX);
+	mz = createQueue(QUEUE_MAX);
+
+	// See Documentation:
+	// http://liquidsdr.org/doc/iirdes/
+	struct filter_options butter;
+	butter.order =   2;       // filter order
+	butter.fc    =   0.4;    // cutoff frequency
+	butter.f0    =   0.0f;    // center frequency
+	butter.Ap    =   3.0f;    // pass-band ripple
+	butter.As    =   60.0f;   // stop-band attenuation
+	butter.ftype  = LIQUID_IIRDES_BUTTER;
+	butter.btype  = LIQUID_IIRDES_LOWPASS;
+	butter.format = LIQUID_IIRDES_SOS;
+	// Create our filters
+	filter_ax = iirfilt_crcf_create_prototype(butter.ftype, butter.btype, butter.format, butter.order, butter.fc, butter.f0, butter.Ap, butter.As);
+	filter_ay = iirfilt_crcf_create_prototype(butter.ftype, butter.btype, butter.format, butter.order, butter.fc, butter.f0, butter.Ap, butter.As);
+	filter_az = iirfilt_crcf_create_prototype(butter.ftype, butter.btype, butter.format, butter.order, butter.fc, butter.f0, butter.Ap, butter.As);
 }
 void destr_parsing() {
 	int ret = 1;
-	while (ret != 0){
-		deQueue(out_ax);	
-		deQueue(out_ay);	
-		deQueue(out_az);	
-		deQueue(out_gx);	
-		deQueue(out_gy);	
-		deQueue(out_gz);	
-		deQueue(out_mx);	
-		deQueue(out_my);	
-		ret = deQueue(out_mz);	
-	}
+	clear(ax);	
+	clear(ay);	
+	clear(az);	
+	clear(gx);	
+	clear(gy);	
+	clear(gz);	
+	clear(mx);	
+	clear(my);	
+	clear(mz);	
 }
 #endif

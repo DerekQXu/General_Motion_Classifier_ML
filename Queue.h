@@ -2,83 +2,66 @@
 #define QUEUE_H
 #include <stdlib.h>
 
-//Linked Lists implementation of Queue Data-Structure
-struct QNode
-{
-	float key;
-	struct QNode *next;
-};
-struct QNode* newNode(float k)
-{
-	struct QNode *temp = (struct QNode*)malloc(sizeof(struct QNode));
-	temp->key = k;
-	temp->next = NULL;
-	return temp; 
-}
-
+//TODO: check if this is legal:
+/* int* k;
+ * k = malloc(...);
+ * *k = 5;
+ * k = k + 1;
+ * *k = 10;
+ * free(k);
+ */
+//Array implementation of Queue Data-Structure
 struct Queue
 {
-	struct QNode *front, *rear;
+	int front, rear, size;
+	unsigned capacity;
+	float* array;
 };
 //initiates the Queue
-struct Queue *createQueue()
+struct Queue *createQueue(unsigned capacity)
 {
-	struct Queue *q = (struct Queue*)malloc(sizeof(struct Queue));
-	q->front = q->rear = NULL;
-	return q;
-}
-//add elements to the queue
-void enQueue(struct Queue *q, float k)
-{
-	struct QNode *temp = newNode(k);
-	// If queue is empty, then new node is front and rear both
-	if (q->rear == NULL)
-	{
-		q->front = q->rear = temp;
-		return;
-	}
-
-	q->rear->next = temp;
-	q->rear = temp;
+	struct Queue *queue = (struct Queue*)malloc(sizeof(struct Queue));
+	queue->capacity = capacity;
+	queue->front = queue->size = 0;
+	queue->rear = capacity - 1;
+	queue->array = (float*) malloc(queue->capacity * sizeof(float));
+	return queue;
 }
 //removes elementes from the queue
-int deQueue(struct Queue *q)
+float deQueue(struct Queue *queue)
 {
-	// If queue is empty, return NULL.
-	if (q->front == NULL){ return 0; }
-
-	struct QNode *temp = q->front;
-	q->front = q->front->next;
-	free(temp);
-
-	// If front becomes NULL, then change rear also as NULL
-	if (q->front == NULL){ q->rear = NULL; }
-	return 1;
+	if (queue->size == 0)
+		return 0;
+	float item = queue->array[queue->front];
+	queue->front = (queue->front + 1)%queue->capacity;
+	queue->size = queue->size - 1;
+	return item;
 }
-//adds and removes an element from the queue
-void denQueue(struct Queue *q, float k)
+//add elements to the queue
+void enQueue(struct Queue *queue, float item)
 {
-	struct QNode *temp = newNode(k);
-	q->rear->next = temp;
-	q->rear = temp;
-	temp = q->front;
-	q->front = q->front->next;
-	free(temp);
+	if (queue->size == queue->capacity)
+		deQueue(queue);
+	queue->rear = (queue->rear + 1) % queue->capacity;
+	queue->array[queue->rear] = item;
+	queue->size = queue->size + 1;
+}
+//less safe but faster implementation of deQueue->enQueue
+void denQueue(struct Queue *queue, float item)
+{
+	queue->front = (queue->front + 1)%queue->capacity;
+	queue->rear = (queue->rear + 1) % queue->capacity;
+	queue->array[queue->rear] = item;
 }
 //return the elt'th last stored value
-float getElt(struct Queue *q, int elt)
+float getElt(struct Queue *queue, int elt)
 {
 	// If queue is empty, return NULL.
-	if (q->front == NULL){ return -1; }
-
-	struct QNode *temp = q->front;
-
-	int i;
-	for (i = 0; i < elt; ++i){
-		temp = temp->next;
-		if (temp == NULL){ return -1; }
-	}
-	return temp->key;
+	return queue->array[(queue->front + elt)%queue->capacity];
+}
+float clear(struct Queue *queue){
+	free(queue->array); 
+	free(queue);
 }
 
 #endif
