@@ -20,6 +20,7 @@
 int i, j;
 int *state_machine;
 int *semaphore;
+int pipe_sensor[2];
 pid_t pid_setup = 123;
 pid_t pid_sensing = 123;
 pid_t pid_parsing = 123;
@@ -46,9 +47,8 @@ void enableSTM()
 	if (pid_sensing == 0)
 	{
 		// raw hex data stored in motion_data.txt
-		int fd = open("motion_data.txt", O_RDWR);
-		dup2(fd, 1);
-		close(fd);
+		close(pipe_sensor[0]);
+		dup2(pipe_sensor[1], STDOUT_FILENO);
 
 		const char* suffix[9] =
 		{
@@ -72,18 +72,18 @@ void parseSTM(){
 	pid_parsing=fork();
 	if (pid_parsing == 0)
 	{
-		FILE *ble_file = fopen("motion_data.txt", "r");
 		init_parsing();
-
 		char raw[BUFF_MAX];
+		close(pipe_sensor[1]);
+		dup2(pipe_sensor[0], STDIN_FILENO);
 
 		// Advance line over file header
-		fgets(raw, BUFF_MAX, ble_file);
+		fgets(raw, BUFF_MAX, stdin);
 
 		// Read motion data
 		for (i = 0; i < QUEUE_MAX; ++i){
 			//update Queue on arrival of new data
-			if (fgets(raw, BUFF_MAX, ble_file)){
+			if (fgets(raw, BUFF_MAX, stdin)){
 				if(stream_parser(raw, enQueue) == 0){ return; } // stream_parser modified for Queues	
 			}
 			else{ --i; }
@@ -94,7 +94,7 @@ void parseSTM(){
 		while(1){
 			switch(*state_machine){
 			case 0:
-				if(fgets(raw, BUFF_MAX, ble_file)){
+				if(fgets(raw, BUFF_MAX, stdin)){
 					if(stream_parser(raw, denQueue) == 0){ return; }
 				}
 				break;
@@ -154,6 +154,12 @@ int main(int argc, char **argv)
 	fflush(stdin);
 	scanf("%d", &dataset_size);
 	printf("setup complete!\n");
+
+	// Pipe setup
+	if (pipe(pipe_sensor) == -1){
+		fprintf(stderr, "Pipe failed.");
+		return 1;
+	}
 
 	// Initiate data collection
 	enableSTM(); //spawns new process to do this.

@@ -13,8 +13,6 @@ done
 
 # run Automated Gattool Connector
 exp='./bctl_helper.exp '
-rm motion_data.txt
-touch motion_data.txt
 rm -r training_set
 mkdir training_set
 eval $exp${MAC[1]}${MAC[2]}
