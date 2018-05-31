@@ -16,7 +16,7 @@ with open(filepath) as fp:
     # collect output (n x 1)
     line = map(int,line_raw[:len(line)-1].split(',',256))
     training_y.append(line)
-    # data_raw = []
+    data_raw = []
     data_scaled_up = []
     data_scaled_down = []
     for i in range(TOTAL_SIZE):
