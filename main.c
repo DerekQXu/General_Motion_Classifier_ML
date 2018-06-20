@@ -9,27 +9,33 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <semaphore.h>
 
-#include "Queue.h"
-#include "BLE_parser.h"
+#include "data_proc.h"
+#include "queue.h"
 
 #define MAX_CLASSIF 10
 #define MAX_NAME_LEN 12 
 
-
 int i, j;
-int *state_machine;
-int *semaphore;
-int pipe_sensor[2];
+FILE *output;
+char *output_file = "training_set.txt";
 pid_t pid_setup = 123;
 pid_t pid_sensing = 123;
 pid_t pid_parsing = 123;
-FILE *output;
+int *run_flag;
+int *valid_flag;
+sem_t *mutex_general;
+sem_t *mutex_beaglebone;
 
-// Automated BLE Connection
-void setupBLE()
+int classif_num;
+char classif_names[MAX_CLASSIF][MAX_NAME_LEN+1];
+
+int pipe_stm2bb[2];
+
+int sensor_init()
 {
-	// Run bctl_auto.sh
+	// enable BLE
 	pid_setup = fork();
 	if (pid_setup == 0){
 		execv("./bctl_auto.sh", NULL);
@@ -37,18 +43,19 @@ void setupBLE()
 	else{
 		wait(NULL);
 	}
-}
 
-// BlueZ Data Collection
-void enableSTM()
-{
-	// Run gattool
+	// setup pipe
+	if (pipe(pipe_stm2bb) == -1){
+		fprintf(stderr, "Pipe failed.");
+		return -1;
+	}
+
+	// run gattool
 	pid_sensing=fork();
 	if (pid_sensing == 0)
 	{
-		// raw hex data stored in motion_data.txt
-		close(pipe_sensor[0]);
-		dup2(pipe_sensor[1], STDOUT_FILENO);
+		close(pipe_stm2bb[0]);
+		dup2(pipe_stm2bb[1], STDOUT_FILENO);
 
 		const char* suffix[9] =
 		{
@@ -64,144 +71,142 @@ void enableSTM()
 		};
 		execl("/usr/bin/gatttool", suffix[0], suffix[1], suffix[2], suffix[3], suffix[4], suffix[5], suffix[6], suffix[7], suffix[8], (char *) NULL);
 	}
+
+	return 0;
 }
 
-// Parsing HEX data
-void parseSTM(){
-	//Parsing from HEX to decimal
-	pid_parsing=fork();
-	if (pid_parsing == 0)
-	{
-		init_parsing();
-		char raw[BUFF_MAX];
-		close(pipe_sensor[1]);
-		dup2(pipe_sensor[0], STDIN_FILENO);
+int parse_init(int training_samples, int testing_samples)
+{
+	// setup data structures
+	char sensor_data[BUFF_SIZE];
 
-		// Advance line over file header
-		fgets(raw, BUFF_MAX, stdin);
+	// setup data processing
+	output = fopen("output.csv", "w");
+	init_parsing(training_samples + 1);
+	init_filter();
 
-		// Read motion data
-		for (i = 0; i < QUEUE_MAX; ++i){
-			//update Queue on arrival of new data
-			if (fgets(raw, BUFF_MAX, stdin)){
-				if(stream_parser(raw, enQueue) == 0){ return; } // stream_parser modified for Queues	
-			}
-			else{ --i; }
-		}
-		*semaphore = 0; //notify parent process queue of size QUEUE_MAX 
+	// setup pipes
+	close(pipe_stm2bb[1]);
+	dup2(pipe_stm2bb[0], STDIN_FILENO);
 
-		// Maintain queue size, QUEUE_MAX
-		while(1){
-			switch(*state_machine){
-			case 0:
-				if(fgets(raw, BUFF_MAX, stdin)){
-					if(stream_parser(raw, denQueue) == 0){ return; }
-				}
-				break;
-			case 1:
-				// save current queue to csv file
-				output = fopen("output.csv", "w");
-				for (i = 0; i < QUEUE_MAX; ++i){
-					fprintf(output,"%f,%f,%f,%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i),getElt(az,i),getElt(gx,i),getElt(gy,i),getElt(gz,i),getElt(mx,i),getElt(my,i),getElt(mz,i));
-				}
-				fclose(output);
-				*semaphore = 0; // notify parent process file safly written
-				*state_machine = 0; // return to parsing 
-				break;
-			default:
-				destr_parsing(); //free memory
-				return;
-			}
+	// skip over the first line
+	fgets(sensor_data, BUFF_SIZE, stdin);
+
+	// buffer motion data
+	/* NOTE: we buffer motion data because it takes time for:
+		sensor to calibrate to gravity
+		sensor to reach steady state
+		filter to calibrate to real-time
+		*/
+	for (i = 0; i < training_samples; ++i){
+		while(!fgets(sensor_data, BUFF_SIZE, stdin)); //TODO: poll instead of spinning
+		parse_and_filter(sensor_data, enQueue);
+	}
+	// notify beaglebone data buffered 
+	sem_post(mutex_beaglebone);
+
+
+	/* begin parsing */
+	int count = 0;
+	while(run_flag){
+		// always parse through data
+		while(!fgets(sensor_data, BUFF_SIZE, stdin)); //TODO: poll instead of spinning
+		parse_and_filter(sensor_data, denQueue);
+
+		/* if beaglebone requesting data,
+			buffer up required amount of data
+			save the data to file
+			notify beaglebone
+		*/
+		if (*valid_flag)
+			++count;
+		if (count == training_samples){
+			// save data
+			for (i = 0; i < training_samples; ++i)
+				fprintf(output,"%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i),getElt(az,i),
+				getElt(gx,i),getElt(gy,i),getElt(gz,i));
+
+			// reset valid_bit and count
+			*valid_flag = 0;
+			count = 0;
+
+			// notify beaglebone data saved 
+			sem_post(mutex_beaglebone);
 		}
 	}
+
+	// close everything
+	fclose(output);
 }
 
 int main(int argc, char **argv)
 {
+	// parse options
 	if(argc != 2){
-		printf("Please enter:\nClassification Number (rec. 3)\n");
-		return 0;
+		printf("Error: expected classification number.\n");
+		exit(0);
 	}
-
-	// Initialize values
-	// float cutoff_freq = atof(argv[1]); <- deprecated, cutoff hardcoded now
-	// Classification values for ML System
-	char classif_names[MAX_CLASSIF][MAX_NAME_LEN+1];
-	int classif_num = atoi(argv[1]);
-	if (classif_num > MAX_CLASSIF){
+	if (atoi(argv[1]) > MAX_CLASSIF){
 		printf("Error: Maxmimum number of classifications is 10\n");
 		return 0;
 	}
-	int dataset_size;
-	// State Machine to keep track of program progress
-	state_machine = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
-	*state_machine = 0;
-	semaphore = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
-	*semaphore = 1;
 
-	// Enable Bluetooth Low Energy Connection
-	setupBLE(); //spawns new process to do this.
-	if (pid_setup == 0){ return; }
+	classif_num = atoi(argv[1]);
 
-	// Ask for training motion names (i.e. circle triangle square none)
-	printf("Please keep the names of motion unique and below 12 characters.\n");
 	for (i = 0; i < classif_num; ++i){
-		printf("What is the name of the motion %d/%d?\n",i+1,classif_num);
+		printf("What is the name of the motion %d of %d?\n",i+1,classif_num);
 		fflush(stdin);
 		scanf("%s", classif_names[i]);
 	}
-	printf("Collect how many data samples per motion?\n");
-	fflush(stdin);
-	scanf("%d", &dataset_size);
+
 	printf("setup complete!\n");
 
-	// Pipe setup
-	if (pipe(pipe_sensor) == -1){
-		fprintf(stderr, "Pipe failed.");
-		return 1;
+	// start bluetooth
+	if(sensor_init() < 0){
+		printf("Error: hardware initiation failed.\n");
+		exit(0);
 	}
 
-	// Initiate data collection
-	enableSTM(); //spawns new process to do this.
-	if (pid_sensing == 0){ return; }
+	// setup synchronization
+	mutex_general = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+	mutex_beaglebone = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+	run_flag = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+	valid_flag = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+	sem_init(mutex_general, 1, 0);
+	sem_init(mutex_beaglebone, 1, 0);
+	*run_flag = 1;
+	*valid_flag = 0;
 
-	// Initiate data parsing
-	parseSTM(); //spawns new process to do this.
-	if (pid_parsing == 0) { return; }
+	// start parsing
+	pid_parsing=fork();
+	if (pid_parsing == 0)
+		parse_init(1000, 100);
+	printf("Initiating data collection...\n");
 	printf("Collecting buffered data...\n");
-	while (*semaphore == 1){ ; } //TODO: change this to actual semaphore
 
-	// clear input buffer
-	fflush(stdin);
-	getchar();
-
-	// Create the .csv files
-	char output_path [MAX_NAME_LEN+20];
+	// run training test
 	for (i = 0; i < classif_num; ++i){
-		for (j = 0; j < dataset_size; ++j){
-			printf("Type [Enter] to save files for training sample %d/%d [%s].\n", j+1, dataset_size, classif_names[i]);
-			fflush(stdin);
-			getchar();
+		// wait for sensor to save data
+		sem_wait(mutex_beaglebone);
+		printf("Type [Enter] to start saving files for training sample %s.\n", classif_names[i]);
+		fflush(stdin);
+		getchar();
 
-			*semaphore = 1;	
-			*state_machine = 1;	
-			printf("Creating csv file...\n");
-			sprintf(output_path, "./training_set/%s%d.csv", classif_names[i],j);
-			while (*semaphore == 1){ ; }
-			rename("output.csv",output_path);
-		}
+		// save name manually
+		fprintf(output, "%s", classif_names[i]);
+
+		// notify sensor to gather data
+		*valid_flag = 1;
+		printf("Gathering Data... please wait.\n");
 	}
 
-	// Exit Program
-	printf("Type [Enter] to stop recording.\n");
-	fflush(stdin);
-	getchar();
+	// notify process is done
+	*run_flag = 0;
 
-	*state_machine = 2;	
-
-	// Wait for child processes to finish
-	waitpid(pid_parsing, &i, 0);
+	// close everything
 	kill(pid_sensing, SIGKILL);
+	waitpid(pid_parsing, NULL, 0);
 
-	printf("Program Exit Successful!\n");
+	exit(0);
+	// run real-time test
 }
