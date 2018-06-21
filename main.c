@@ -90,7 +90,7 @@ int parse_init(int training_samples, int testing_samples)
 	dup2(pipe_stm2bb[0], STDIN_FILENO);
 
 	// skip over the first line
-	fgets(sensor_data, BUFF_SIZE, stdin);
+	while(!fgets(sensor_data, BUFF_SIZE, stdin));
 
 	// buffer motion data
 	/* NOTE: we buffer motion data because it takes time for:
@@ -178,9 +178,10 @@ int main(int argc, char **argv)
 	*valid_flag = 0;
 
 	// start parsing
+	output = fopen("output.csv", "w");
 	pid_parsing=fork();
 	if (pid_parsing == 0)
-		parse_init(1000, 100);
+		parse_init(10, 1);
 	printf("Initiating data collection...\n");
 	printf("Collecting buffered data...\n");
 
@@ -206,6 +207,7 @@ int main(int argc, char **argv)
 	// close everything
 	kill(pid_sensing, SIGKILL);
 	waitpid(pid_parsing, NULL, 0);
+	fclose(output);
 
 	exit(0);
 	// run real-time test
