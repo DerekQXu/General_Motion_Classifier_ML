@@ -75,13 +75,12 @@ int sensor_init()
 	return 0;
 }
 
-int parse_init(int training_samples, int testing_samples)
+int parse_init(int classif_num, int training_samples, int testing_samples)
 {
 	// setup data structures
 	char sensor_data[BUFF_SIZE];
 
 	// setup data processing
-	output = fopen("output.csv", "w");
 	init_parsing(training_samples + 1);
 	init_filter();
 
@@ -105,38 +104,44 @@ int parse_init(int training_samples, int testing_samples)
 	// notify beaglebone data buffered 
 	sem_post(mutex_beaglebone);
 
-
-	/* begin parsing */
+	// collect training data
 	int count = 0;
-	while(run_flag){
+	while(1){
 		// always parse through data
 		while(!fgets(sensor_data, BUFF_SIZE, stdin)); //TODO: poll instead of spinning
 		parse_and_filter(sensor_data, denQueue);
 
 		/* if beaglebone requesting data,
-			buffer up required amount of data
-			save the data to file
-			notify beaglebone
-		*/
+		   buffer up required amount of data
+		   save the data to file
+		   notify beaglebone
+		 */
 		if (*valid_flag)
 			++count;
 		if (count == training_samples){
 			// save data
+			output = fopen("output.csv", "a");
 			for (i = 0; i < training_samples; ++i)
 				fprintf(output,"%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i),getElt(az,i),
-				getElt(gx,i),getElt(gy,i),getElt(gz,i));
+						getElt(gx,i),getElt(gy,i),getElt(gz,i));
+			fclose(output);
 
 			// reset valid_bit and count
+			sem_wait(mutex_general);
 			*valid_flag = 0;
+			sem_post(mutex_general);
 			count = 0;
 
 			// notify beaglebone data saved 
 			sem_post(mutex_beaglebone);
+
+			// check if main process is done
+			if (*run_flag == 0)
+				break;
 		}
 	}
 
-	// close everything
-	fclose(output);
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -172,43 +177,52 @@ int main(int argc, char **argv)
 	mutex_beaglebone = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	run_flag = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	valid_flag = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
-	sem_init(mutex_general, 1, 0);
+	sem_init(mutex_general, 1, 1);
 	sem_init(mutex_beaglebone, 1, 0);
 	*run_flag = 1;
 	*valid_flag = 0;
 
 	// start parsing
-	output = fopen("output.csv", "w");
 	pid_parsing=fork();
-	if (pid_parsing == 0)
-		parse_init(10, 1);
+	if (pid_parsing == 0){
+		parse_init(classif_num, 10, 1);
+		exit(0);
+	}
 	printf("Initiating data collection...\n");
 	printf("Collecting buffered data...\n");
 
+	// BUG: must have this to clean stream for some reson
+	fflush(stdin);
+	getchar();
 	// run training test
 	for (i = 0; i < classif_num; ++i){
 		// wait for sensor to save data
 		sem_wait(mutex_beaglebone);
+
 		printf("Type [Enter] to start saving files for training sample %s.\n", classif_names[i]);
 		fflush(stdin);
 		getchar();
+		output = fopen("output.csv", "a");
+		fprintf(output, "%s\n", classif_names[i]);
+		fclose(output);
 
-		// save name manually
-		fprintf(output, "%s", classif_names[i]);
-
+		sem_wait(mutex_general);
 		// notify sensor to gather data
 		*valid_flag = 1;
-		printf("Gathering Data... please wait.\n");
+		// notify sensor that main is done 
+		if (i == classif_num - 1)
+			*run_flag = 0;
+		sem_post(mutex_general);
+		printf("Gathering data....\n");
 	}
-
-	// notify process is done
-	*run_flag = 0;
+	// wait for sensor to save data
+	sem_wait(mutex_beaglebone);
 
 	// close everything
 	kill(pid_sensing, SIGKILL);
 	waitpid(pid_parsing, NULL, 0);
-	fclose(output);
 
+	printf("Successful program exit!\n");
 	exit(0);
 	// run real-time test
 }

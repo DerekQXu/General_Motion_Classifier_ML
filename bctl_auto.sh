@@ -13,8 +13,7 @@ done
 
 # run Automated Gattool Connector
 exp='./bctl_helper.exp '
-rm -r training_set
-mkdir training_set
+rm -f output.csv
 eval $exp${MAC[1]}${MAC[2]}
 
 # clear output

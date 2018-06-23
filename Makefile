@@ -1,8 +1,8 @@
 CC = gcc
 CFLAGS = -lc -lm -lliquid -pthread
 
-build:
+build: clean
 	$(CC) $(CFLAGS) -o main main.c
 
 clean:
-	rm -f main 
+	rm -f main output.csv
