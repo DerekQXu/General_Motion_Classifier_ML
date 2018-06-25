@@ -100,6 +100,8 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 	for (i = 0; i < training_samples; ++i){
 		while(!fgets(sensor_data, BUFF_SIZE, stdin)); //TODO: poll instead of spinning
 		parse_and_filter(sensor_data, enQueue);
+		if (!(i % 10))
+			printf("\r [%d/%d]", i, training_samples);
 	}
 	// notify beaglebone data buffered 
 	sem_post(mutex_beaglebone);
@@ -116,8 +118,11 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 		   save the data to file
 		   notify beaglebone
 		 */
-		if (*valid_flag)
+		if (*valid_flag){
+			if (!(count % 10))
+				printf("\r [%d/%d]", count, training_samples);
 			++count;
+		}
 		if (count == training_samples){
 			// save data
 			output = fopen("output.csv", "a");
@@ -185,7 +190,7 @@ int main(int argc, char **argv)
 	// start parsing
 	pid_parsing=fork();
 	if (pid_parsing == 0){
-		parse_init(classif_num, 10, 1);
+		parse_init(classif_num, 1000, 1);
 		exit(0);
 	}
 	printf("Initiating data collection...\n");
@@ -198,6 +203,7 @@ int main(int argc, char **argv)
 	for (i = 0; i < classif_num; ++i){
 		// wait for sensor to save data
 		sem_wait(mutex_beaglebone);
+		printf("\r [1000/1000]\n");
 
 		printf("Type [Enter] to start saving files for training sample %s.\n", classif_names[i]);
 		fflush(stdin);
@@ -217,6 +223,7 @@ int main(int argc, char **argv)
 	}
 	// wait for sensor to save data
 	sem_wait(mutex_beaglebone);
+	printf("\r [1000/1000]\n");
 
 	// close everything
 	kill(pid_sensing, SIGKILL);
