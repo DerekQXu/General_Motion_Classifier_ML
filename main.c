@@ -23,8 +23,12 @@ char *output_file = "training_set.txt";
 pid_t pid_setup = 123;
 pid_t pid_sensing = 123;
 pid_t pid_parsing = 123;
+pid_t pid_keras_trainer = 123;
+pid_t pid_keras_classify = 123;
+pid_t pid_clock = 123;
 int *run_flag;
 int *valid_flag;
+int *gather_flag;
 sem_t *mutex_general;
 sem_t *mutex_beaglebone;
 
@@ -77,6 +81,9 @@ int sensor_init()
 
 int parse_init(int classif_num, int training_samples, int testing_samples)
 {
+	// remove existing training_data.txt
+	remove("training_data.csv");
+
 	// setup data structures
 	char sensor_data[BUFF_SIZE];
 
@@ -122,28 +129,46 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 			if (!(count % 10))
 				printf("\r [%d/%d]", count, training_samples);
 			++count;
+			if (count == training_samples){
+				// save data
+				output = fopen("training_data.csv", "a");
+				for (i = 0; i < training_samples; ++i)
+				//fprintf(output,"%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i),getElt(gx,i),getElt(gy,i),getElt(gz,i));
+				fprintf(output,"%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i));
+				fclose(output);
+
+				// reset valid_bit and count
+				sem_wait(mutex_general);
+				*valid_flag = 0;
+				sem_post(mutex_general);
+				count = 0;
+
+				// notify beaglebone data saved 
+				sem_post(mutex_beaglebone);
+			}
 		}
-		if (count == training_samples){
-			// save data
-			output = fopen("output.csv", "a");
-			for (i = 0; i < training_samples; ++i)
-				fprintf(output,"%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i),getElt(az,i),
-						getElt(gx,i),getElt(gy,i),getElt(gz,i));
+		/* depending on a clock, we save a data to a file
+		   to run out python Keras model on
+		*/
+		if (*gather_flag){
+			remove("testing_data.csv");
+			output = fopen("testing_data.csv", "a");
+			for (i = 0; i < 100; ++i)
+				//fprintf(output,"%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i),getElt(gx,i),getElt(gy,i),getElt(gz,i));
+				fprintf(output,"%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i));
 			fclose(output);
-
-			// reset valid_bit and count
-			sem_wait(mutex_general);
-			*valid_flag = 0;
-			sem_post(mutex_general);
-			count = 0;
-
-			// notify beaglebone data saved 
-			sem_post(mutex_beaglebone);
-
-			// check if main process is done
-			if (*run_flag == 0)
-				break;
+			// run keras model on our data 
+			pid_keras_classify = fork();
+			if (pid_keras_classify == 0){
+				//execv("./classify.py", NULL);
+				exit(0);
+			}
+			waitpid(pid_keras_classify, NULL, 0);
+			*gather_flag = 0;
 		}
+		// check if main process is done
+		if (*run_flag == 0)
+			break;
 	}
 
 	return 0;
@@ -182,11 +207,13 @@ int main(int argc, char **argv)
 	mutex_beaglebone = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	run_flag = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	valid_flag = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+	gather_flag = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	sem_init(mutex_general, 1, 1);
 	sem_init(mutex_beaglebone, 1, 0);
 	*run_flag = 1;
 	*valid_flag = 0;
-
+	*gather_flag = 0;
+	
 	// start parsing
 	pid_parsing=fork();
 	if (pid_parsing == 0){
@@ -208,16 +235,28 @@ int main(int argc, char **argv)
 		printf("Type [Enter] to start saving files for training sample %s.\n", classif_names[i]);
 		fflush(stdin);
 		getchar();
-		output = fopen("output.csv", "a");
-		fprintf(output, "%s\n", classif_names[i]);
+		output = fopen("training_data.csv", "a");
+
+		// print proper output
+		if (i == 0)
+			fprintf(output, "1");
+		else
+			fprintf(output, "0");
+		for (j = 1; j < i; ++j)		
+			fprintf(output, ",0");
+		if (j == i){
+			fprintf(output, ",1");
+			++j;
+		}
+		for (; j < classif_num; ++j)		
+			fprintf(output, ",0");
+		fprintf(output, "\n");
+
 		fclose(output);
 
 		sem_wait(mutex_general);
 		// notify sensor to gather data
 		*valid_flag = 1;
-		// notify sensor that main is done 
-		if (i == classif_num - 1)
-			*run_flag = 0;
 		sem_post(mutex_general);
 		printf("Gathering data....\n");
 	}
@@ -225,11 +264,41 @@ int main(int argc, char **argv)
 	sem_wait(mutex_beaglebone);
 	printf("\r [1000/1000]\n");
 
+	// run python script to train keras model
+	pid_keras_trainer = fork();
+	if (pid_keras_trainer == 0){
+		//execv("./train.py", NULL);
+		exit(0);
+	}
+	waitpid(pid_keras_trainer, NULL, 0);
+
+	// testing is handled by parsing process
+	printf("\nTesting Data:\n");
+
+	// periodically notifies clock
+	pid_clock = fork();
+	if (pid_clock == 0){
+		// check for changed state every second 
+		while (*run_flag){
+			sleep(1);	
+			*gather_flag = 1;
+		}
+		exit(0);
+	}
+
+	// let user tell us when to quit
+	printf("Type [Enter] to exit program.\n");
+	getchar();
+
+	// notify everyone that main is done 
+	*run_flag = 0;
+
 	// close everything
-	kill(pid_sensing, SIGKILL);
+	waitpid(pid_clock, NULL, 0);
 	waitpid(pid_parsing, NULL, 0);
+	kill(pid_sensing, SIGKILL);
 
 	printf("Successful program exit!\n");
+
 	exit(0);
-	// run real-time test
 }
