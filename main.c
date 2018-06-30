@@ -115,6 +115,7 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 
 	// collect training data
 	int count = 0;
+	char rotate[4] = {'|','/','-','\\'};
 	while(1){
 		// always parse through data
 		while(!fgets(sensor_data, BUFF_SIZE, stdin)); //TODO: poll instead of spinning
@@ -153,7 +154,7 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 		if (*gather_flag){
 			remove("testing_data.csv");
 			output = fopen("testing_data.csv", "a");
-			for (i = 0; i < 100; ++i)
+			for (i = 0; i < 50; ++i)
 				//fprintf(output,"%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i),getElt(gx,i),getElt(gy,i),getElt(gz,i));
 				fprintf(output,"%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i));
 			fclose(output);
@@ -165,6 +166,10 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 			}
 			waitpid(pid_keras_classify, NULL, 0);
 			*gather_flag = 0;
+			printf("\rData saved! [%c]", rotate[count%4]);
+			++count;
+			if (count > 3)
+				count = 0;
 		}
 		// check if main process is done
 		if (*run_flag == 0)
