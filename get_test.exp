@@ -1,0 +1,7 @@
+#!/usr/bin/expect -f
+
+spawn scp root@192.168.6.2:~/Desktop/BLE/system_v0/testing_data.csv /home/derek/Documents/BLE_ML/experimental/
+
+expect "2's password:"
+send -- "temppwd\r"
+expect "100%"
