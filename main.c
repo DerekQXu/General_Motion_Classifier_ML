@@ -104,11 +104,13 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 		sensor to reach steady state
 		filter to calibrate to real-time
 		*/
-	for (i = 0; i < training_samples; ++i){
+	int queue_size = 0;
+	for (i = 0; i < 200; ++i){
 		while(!fgets(sensor_data, BUFF_SIZE, stdin)); //TODO: poll instead of spinning
 		parse_and_filter(sensor_data, enQueue);
+		++queue_size;
 		if (!(i % 10))
-			printf("\r [%d/%d]", i, training_samples);
+			printf("\r [%d/200]", i);
 	}
 	// notify beaglebone data buffered 
 	sem_post(mutex_beaglebone);
@@ -119,7 +121,13 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 	while(1){
 		// always parse through data
 		while(!fgets(sensor_data, BUFF_SIZE, stdin)); //TODO: poll instead of spinning
-		parse_and_filter(sensor_data, denQueue);
+		if (queue_size < training_samples){
+			parse_and_filter(sensor_data, enQueue);
+			++queue_size;
+		}
+		else{
+			parse_and_filter(sensor_data, denQueue);
+		}
 
 		/* if beaglebone requesting data,
 		   buffer up required amount of data
@@ -154,7 +162,7 @@ int parse_init(int classif_num, int training_samples, int testing_samples)
 		if (*gather_flag){
 			remove("testing_data.csv");
 			output = fopen("testing_data.csv", "a");
-			for (i = 0; i < 50; ++i)
+			for (i = training_samples-50; i < training_samples; ++i)
 				//fprintf(output,"%f,%f,%f,%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i),getElt(gx,i),getElt(gy,i),getElt(gz,i));
 				fprintf(output,"%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i));
 			fclose(output);
@@ -285,7 +293,7 @@ int main(int argc, char **argv)
 	if (pid_clock == 0){
 		// check for changed state every second 
 		while (*run_flag){
-			sleep(1);	
+			sleep(3);	
 			*gather_flag = 1;
 		}
 		exit(0);
