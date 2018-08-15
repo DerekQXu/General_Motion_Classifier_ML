@@ -9,11 +9,7 @@ tf.logging.set_verbosity(tf.logging.ERROR)
 from random import shuffle
 from keras.models import Sequential
 from keras.layers import Dense
-from keras.layers import TimeDistributed
 from keras.layers import LSTM
-from keras.layers import Flatten
-from keras.layers.convolutional import Conv1D
-from keras.layers.convolutional import MaxPooling1D
 import numpy as np
 import csv
 
@@ -66,18 +62,18 @@ def main():
 
     # run algorithms
     channels = 3
-    filter_size = 3
-    cnn = Sequential()
-    cnn.add(Conv1D(filters=1, kernel_size=3, activation='relu', padding='same', input_shape=(channels, filter_size)))
-    cnn.add(MaxPooling1D(pool_size=channels))
-    cnn.add(Flatten())
     model = Sequential()
-    model.add(TimeDistributed(cnn, input_shape=(queue_size, channels, filter_size)))
-    model.add(LSTM(100))
-    model.add(Dense(3, activation='sigmoid'))
-
+    model.add(LSTM(30, input_shape=(channels, queue_size)))
+    model.add(Dense(classif_num, activation = 'sigmoid'))
+    '''
+    model.add(LSTM(25, input_shape=(channels, queue_size), dropout=0.2, recurrent_dropout=0.2, return_sequences=True))
+    model.add(Dense(10))
+    model.add(LSTM(25, dropout=0.2, recurrent_dropout=0.2))
+    model.add(Dense(2, activation = 'sigmoid'))
+    '''
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-    model.fit(keras_training_X, keras_training_Y, epochs = 3, batch_size = 64)
+
+    model.fit(keras_training_X, keras_training_Y, epochs = 5, batch_size = 32)
 
     # save model
     model.save('model.h5')

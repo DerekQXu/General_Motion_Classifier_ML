@@ -53,8 +53,11 @@ struct point_3D {
   float z_comp;
 };
 struct point_3D acc_bias;
+
+// flags/ options
 int bias_init_flag;
 int bias_flag;
+int run_flag = 0;
 
 // pipe stuff
 int pipe_stm2bb[2];
@@ -66,6 +69,7 @@ int pid_BLE = 123;
 int pid_DSP = 123;
 int pid_ML_tr = 123;
 int pid_ML_te = 123;
+
 
 ////////////////////////////////////////////////////////////////////
 // Initialization Functions
@@ -224,11 +228,13 @@ int DSP_driver(){
     while (!fgets(raw_data, PACKET_SIZE, data_stream));
 
     int q_size = 0;
-    int report_flag = 0;
+    int periodic_report_flag = 0;
+    int batch_report_flag = 0;
     struct point_3D LPF_data_acc;
     int training_size, count;
     int bias_sample_init = 15 < BUFFER_SIZE ? 15 : BUFFER_SIZE-1;
     int bias_sample_end = 30 < BUFFER_SIZE ? 30 : BUFFER_SIZE;
+    FILE *output_file;
     while (1){
       //parse and filter sensor_data with enqueue
       while (!fgets(raw_data, PACKET_SIZE, data_stream));
@@ -238,17 +244,31 @@ int DSP_driver(){
       if (poll_ctrl.revents & POLLIN){
         char mssg[256] = "";
         read(pipe_ctrl2bb[0], mssg, 256);
-
         training_size = atoi(mssg);
-        report_flag = 1;
+
+        if (training_size == -1)
+          periodic_report_flag = 1;
+        else
+          batch_report_flag = 1;
         count = 0;
       }
 
-      if (report_flag){
+      if (batch_report_flag){
         write(pipe_acc_stream[1], &LPF_data_acc, sizeof(struct point_3D));
         ++count;
         if (count == training_size)
-          report_flag = 0;
+          batch_report_flag = 0;
+      }
+
+      if (periodic_report_flag){
+        ++count;
+        if (count == 50){
+          output_file = fopen("testing_data.csv", "wb");
+          for (i = 0; i < BUFFER_SIZE; ++i)
+            fprintf(output_file,"%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i));
+          fclose(output_file);
+          count = 0;
+        }
       }
 
       if(q_size < BUFFER_SIZE){
@@ -302,15 +322,9 @@ int ML_driver_tr(){
 ////////////////////////////////////////////////////////////////////
 // Process 4: Keras Testing Driver (ML_testing)
 ////////////////////////////////////////////////////////////////////
-int ML_driver_te(){
+int ML_driver_te(char *name_arg){
   pid_ML_te = fork();
   if (pid_ML_te == 0){
-    char name_arg [512] = "";
-    strcat(name_arg, classif_mnemo[0]);
-    for (i = 1; i < classif_num; ++i){
-      strcat(name_arg, ":");
-      strcat(name_arg, classif_mnemo[i]);
-
     execl("test_auto.py", "test_auto.py", name_arg, (char *) NULL);
     return -1;
   }
@@ -324,6 +338,8 @@ int ML_driver_te(){
 ////////////////////////////////////////////////////////////////////
 int main (int argc, char **argv)
 {
+  if (argc > 1)
+    run_flag = 1;
   // collect classification number, names, and hyper-parameters
   int classif_num;
   printf("Please enter the number of classifications being made [2-8]: ");
@@ -360,77 +376,93 @@ int main (int argc, char **argv)
   sleep(3);
   printf("Data Buffered\n\n");
 
-  /* collect sample data */
-  int training_size = 1000;
-  // write header
-  FILE *training_file = fopen("training_data.csv", "w");
-  fprintf(training_file, "%d,%d,%d", training_size, classif_num, BUFFER_SIZE);
-  for (i = 0; i < classif_num; ++i)
-    fprintf(training_file, ",%s", classif_mnemo[i]);
-  fprintf(training_file, "\n");
+  if (!run_flag){
+    /* collect sample data */
+    int training_size = 1000;
+    // write header
+    FILE *training_file = fopen("training_data.csv", "w");
+    fprintf(training_file, "%d,%d,%d", training_size, classif_num, BUFFER_SIZE);
+    for (i = 0; i < classif_num; ++i)
+      fprintf(training_file, ",%s", classif_mnemo[i]);
+    fprintf(training_file, "\n");
 
-  struct point_3D LPF_data_acc;
-  char notif_mssg[128];
-  snprintf(notif_mssg, sizeof(notif_mssg), "%d", training_size);
+    struct point_3D LPF_data_acc;
+    char notif_mssg[128];
+    snprintf(notif_mssg, sizeof(notif_mssg), "%d", training_size);
 
-  struct pollfd poll_acc;
-  poll_acc.fd = pipe_acc_stream[0];
-  poll_acc.events = POLLIN;
+    struct pollfd poll_acc;
+    poll_acc.fd = pipe_acc_stream[0];
+    poll_acc.events = POLLIN;
 
-  // clear stream
-  int c; while ((c = getchar()) != '\n' && c != EOF);
+    // clear stream
+    int c; while ((c = getchar()) != '\n' && c != EOF);
 
-  for (i = 0; i < classif_num; ++i){
-    for (j = 0; j < classif_num; ++j){
-      if (i == j)
-        fprintf(training_file, "1");
-      else
-        fprintf(training_file, "0");
-      if (j != classif_num-1)
-        fprintf(training_file, ",");
-      else
-        fprintf(training_file, "\n");
-    }
-
-    printf("Type [Enter] to start saving training data for sample %s.\n", classif_mnemo[i]);
-    getchar();
-    printf("[0/%d] data collected.", training_size);
-
-    write(pipe_ctrl2bb[1], notif_mssg, strlen(notif_mssg));
-    for(j = 0; j < training_size;){
-      poll(&poll_acc, 1, 0);
-      if (poll_acc.revents & POLLIN){
-        read(pipe_acc_stream[0], &LPF_data_acc, sizeof(struct point_3D));
-        printf("\r[%d/%d] data collected.", j, training_size);
-        //printf("%f\t%f\t%f\n", LPF_data_acc.x_comp, LPF_data_acc.y_comp, LPF_data_acc.z_comp);
-        fprintf(training_file, "%f,%f,%f\n", LPF_data_acc.x_comp, LPF_data_acc.y_comp, LPF_data_acc.z_comp);
-        ++j;
+    for (i = 0; i < classif_num; ++i){
+      for (j = 0; j < classif_num; ++j){
+        if (i == j)
+          fprintf(training_file, "1");
+        else
+          fprintf(training_file, "0");
+        if (j != classif_num-1)
+          fprintf(training_file, ",");
+        else
+          fprintf(training_file, "\n");
       }
+
+      printf("Type [Enter] to start saving training data for sample %s.\n", classif_mnemo[i]);
+      getchar();
+      printf("[0/%d] data collected.", training_size);
+
+      write(pipe_ctrl2bb[1], notif_mssg, strlen(notif_mssg));
+      for(j = 0; j < training_size;){
+        poll(&poll_acc, 1, 0);
+        if (poll_acc.revents & POLLIN){
+          read(pipe_acc_stream[0], &LPF_data_acc, sizeof(struct point_3D));
+          printf("\r[%d/%d] data collected.", j, training_size);
+          //printf("%f\t%f\t%f\n", LPF_data_acc.x_comp, LPF_data_acc.y_comp, LPF_data_acc.z_comp);
+          fprintf(training_file, "%f,%f,%f\n", LPF_data_acc.x_comp, LPF_data_acc.y_comp, LPF_data_acc.z_comp);
+          ++j;
+        }
+      }
+
+      printf("\r[%d/%d] data collected.\n", j, training_size);
     }
+    fclose(training_file);
 
-    printf("\r[%d/%d] data collected.\n", j, training_size);
+    /* spawn training process */
+    printf("\nRunning Keras Training Script:\n");
+    ML_driver_tr();
   }
-  fclose(training_file);
-
-  /* spawn training process */
-  printf("\nRunning Keras Training Script:\n");
-  ML_driver_tr();
-
   // testing stage
   /* spawn testing process */
-  /*
   printf("\nStarting Keras real-time classification driver.\n");
-  ML_driver_te();
-  */
+  char name_arg [512] = "";
+  strcat(name_arg, classif_mnemo[0]);
+  for (i = 1; i < classif_num; ++i){
+    strcat(name_arg, ":");
+    strcat(name_arg, classif_mnemo[i]);
+  }
+
+  ML_driver_te(name_arg);
 
   /* periodically save text file */
+  write(pipe_ctrl2bb[1], "-1", 16);
+  printf("Type [Enter] to end program.\n\n");
+  int c; while ((c = getchar()) != '\n' && c != EOF);
+  while(1){
+    usleep(50000);
+    if(getchar() != EOF)
+      break;
+  }
 
   // cleanup
   kill(pid_BLE, SIGKILL);
   kill(pid_DSP, SIGKILL);
+  kill(pid_ML_te, SIGKILL);
   clear(ax);
   clear(ay);
   clear(az);
 
   wait(NULL);
+  printf("Successful Program Exit.\n");
 }
