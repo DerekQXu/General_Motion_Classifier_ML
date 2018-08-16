@@ -6,6 +6,11 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 import tensorflow as tf
 tf.logging.set_verbosity(tf.logging.ERROR)
 
+# get the model and the data reorganization
+from custom import Data_Obj
+from custom import data_func
+from custom import train_func
+
 import numpy as np
 import sys
 import os
@@ -30,9 +35,9 @@ def main():
         raw_data = []
         for line in reader:
             raw_data.append([float(val) for val in line])
+        proc_data = [Data_Obj(raw_data, None)]
 
-        keras_testing_X = np.asmatrix(raw_data).transpose()
-        keras_testing_X = np.asarray([keras_testing_X])
+        (keras_testing_X, temp) = data_func(proc_data)
 
         results = model.predict(keras_testing_X, batch_size=32, verbose=0)
         print (results)

@@ -15,6 +15,7 @@
 #include <liquid/liquid.h>
 #include <poll.h>
 #include <unistd.h>
+#include <getopt.h>
 
 //#include "data_proc.h"
 #include "queue.h"
@@ -22,7 +23,7 @@
 
 #define MAX_CLASSIF 8
 #define MAX_NAME_LEN 32
-#define BUFFER_SIZE 50 //otherwise known as queue size
+#define QUEUE_SIZE 50
 #define PACKET_SIZE 256
 
 // General Variables
@@ -93,9 +94,9 @@ int init_pipes(){
 
 int init_queue(){
   // initialize all queues
-  ax = createQueue(BUFFER_SIZE);
-  ay = createQueue(BUFFER_SIZE);
-  az = createQueue(BUFFER_SIZE);
+  ax = createQueue(QUEUE_SIZE);
+  ay = createQueue(QUEUE_SIZE);
+  az = createQueue(QUEUE_SIZE);
 }
 
 int init_filter(){
@@ -232,8 +233,8 @@ int DSP_driver(){
     int batch_report_flag = 0;
     struct point_3D LPF_data_acc;
     int training_size, count;
-    int bias_sample_init = 15 < BUFFER_SIZE ? 15 : BUFFER_SIZE-1;
-    int bias_sample_end = 30 < BUFFER_SIZE ? 30 : BUFFER_SIZE;
+    int bias_sample_init = 15 < QUEUE_SIZE ? 15 : QUEUE_SIZE-1;
+    int bias_sample_end = 30 < QUEUE_SIZE ? 30 : QUEUE_SIZE;
     FILE *output_file;
     while (1){
       //parse and filter sensor_data with enqueue
@@ -262,16 +263,16 @@ int DSP_driver(){
 
       if (periodic_report_flag){
         ++count;
-        if (count == 50){
+        if (count == 30){
           output_file = fopen("testing_data.csv", "wb");
-          for (i = 0; i < BUFFER_SIZE; ++i)
+          for (i = 0; i < QUEUE_SIZE; ++i)
             fprintf(output_file,"%f,%f,%f\n",getElt(ax,i),getElt(ay,i), getElt(az,i));
           fclose(output_file);
           count = 0;
         }
       }
 
-      if(q_size < BUFFER_SIZE){
+      if(q_size < QUEUE_SIZE){
         enQueue(ax, LPF_data_acc.x_comp);
         enQueue(ay, LPF_data_acc.y_comp);
         enQueue(az, LPF_data_acc.z_comp);
@@ -338,8 +339,23 @@ int ML_driver_te(char *name_arg){
 ////////////////////////////////////////////////////////////////////
 int main (int argc, char **argv)
 {
-  if (argc > 1)
-    run_flag = 1;
+  static struct option long_options[] =
+  {
+    {"real_time_mode", no_argument, NULL, 'r'},
+    {0,0,0,0}
+  };
+  while ((i = getopt_long(argc, argv, "r", long_options, 0)) != -1)
+  {
+    switch (i){
+      case 'r':
+        printf("Running in real-time mode.\n");
+        run_flag = 1;
+        break;
+      default:
+        printf("Error: Unrecognized flag.\n");
+        return 1;
+    }
+  }
   // collect classification number, names, and hyper-parameters
   int classif_num;
   printf("Please enter the number of classifications being made [2-8]: ");
@@ -381,7 +397,7 @@ int main (int argc, char **argv)
     int training_size = 1000;
     // write header
     FILE *training_file = fopen("training_data.csv", "w");
-    fprintf(training_file, "%d,%d,%d", training_size, classif_num, BUFFER_SIZE);
+    fprintf(training_file, "%d,%d,%d", training_size, classif_num, QUEUE_SIZE);
     for (i = 0; i < classif_num; ++i)
       fprintf(training_file, ",%s", classif_mnemo[i]);
     fprintf(training_file, "\n");
