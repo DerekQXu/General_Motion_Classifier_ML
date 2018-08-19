@@ -38,7 +38,6 @@ def main():
         for j in range(training_size):
             in_sample.append([float(val) for val in next(reader)])
         raw_data.append(Data_Obj(in_sample, out_sample))
-    # raw_data = raw_data[1::2] . . . Why do we purposely handicap ourselves?
 
     # window raw training data
     proc_data = []

@@ -15,20 +15,7 @@ class Data_Obj():
 
 
 def data_func(raw_data):
-    # Default Data Manipulation (LSTM)
-    '''
-    keras_X = []
-    keras_Y = []
-    for data in raw_data:
-        keras_X.append(np.asmatrix(data.in_data).transpose())
-        if data.out_data != None:
-            keras_Y.append(np.asarray(data.out_data))
-    keras_X = np.asarray(keras_X)
-    keras_Y = np.asarray(keras_Y)
-    return (keras_X, keras_Y)
-
-    '''
-    # Advanced Data Manipulation (CNN+LSTM)
+    # Data Manipulation (CNN+LSTM)
     keras_X = []
     keras_Y = []
     temp = []
@@ -48,33 +35,20 @@ def data_func(raw_data):
 
     return (keras_X, keras_Y)
 
+    '''
+    # Data Manipulation (LSTM)
+    keras_X = []
+    keras_Y = []
+    for data in raw_data:
+        keras_X.append(np.asmatrix(data.in_data).transpose())
+        if data.out_data != None:
+            keras_Y.append(np.asarray(data.out_data))
+    keras_X = np.asarray(keras_X)
+    keras_Y = np.asarray(keras_Y)
+    return (keras_X, keras_Y)
+    '''
+
 def train_func(keras_training_X, keras_training_Y, training_size, classif_num, queue_size, channels = 3):
-
-    '''
-    # basic LSTM Network
-    model = Sequential()
-    model.add(LSTM(100, input_shape=(channels, queue_size)))
-    model.add(Dense(classif_num, activation = 'sigmoid'))
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-    model.fit(keras_training_X, keras_training_Y, epochs = 5, batch_size = 64)
-
-    # save model
-    model.save('model.h5')
-    '''
-
-    '''
-    # More Complex LSTM Network
-    model.add(LSTM(25, input_shape=(channels, queue_size), dropout=0.2, recurrent_dropout=0.2, return_sequences=True))
-    model.add(Dense(10))
-    model.add(LSTM(25, dropout=0.2, recurrent_dropout=0.2))
-    model.add(Dense(classif_num, activation = 'sigmoid'))
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-    model.fit(keras_training_X, keras_training_Y, epochs = 3, batch_size = 64)
-
-    # save model
-    model.save('model.h5')
-    '''
-
     # CNN LSTM Network
     filter_size = 3
     cnn = Sequential()
@@ -91,4 +65,14 @@ def train_func(keras_training_X, keras_training_Y, training_size, classif_num, q
     # save model
     model.save('model.h5')
 
+    '''
+    # basic LSTM Network
+    model = Sequential()
+    model.add(LSTM(100, input_shape=(channels, queue_size)))
+    model.add(Dense(classif_num, activation = 'sigmoid'))
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.fit(keras_training_X, keras_training_Y, epochs = 5, batch_size = 64)
 
+    # save model
+    model.save('model.h5')
+    '''
