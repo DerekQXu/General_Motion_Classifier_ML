@@ -19,13 +19,16 @@ import time
 from keras.models import load_model
 
 def main():
+    # collect hyper parameter data
     classif_mnemo = sys.argv[1].split(':')
     filepath = "testing_data.csv"
     collect_flag = 0
 
+    # load model
     model = load_model('model.h5')
 
     while True:
+        # wait for 'training_data.csv' to be written
         while not os.path.exists(filepath):
             time.sleep(0.05)
 
@@ -37,12 +40,17 @@ def main():
             raw_data.append([float(val) for val in line])
         proc_data = [Data_Obj(raw_data, None)]
 
+        # process raw data
         (keras_testing_X, temp) = data_func(proc_data)
 
+        # run model prediction
         results = model.predict(keras_testing_X, batch_size=32, verbose=0)
+
+        # output results
         print (results)
         print ('predicted motion: ' + classif_mnemo[np.argmax(results)])
 
+        # delete 'training_data.csv'
         os.remove(filepath)
 
 if __name__ == '__main__':
