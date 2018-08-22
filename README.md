@@ -35,16 +35,14 @@ Turn on your Sensortile using software from Tutorial 8 of the UCLA STMicroelectr
 <br><br>
 Run the following command: ```$ ./main (or $ sudo ./main)```
 ### Flags and Extensions
-The following describes the available flags:
-<br>
 ```./main [-r] [--bias=[status]]```
-<br>
+<br><br>
 The -r flag will skip the training step and perform real-time classification with an existing model.m5 file.
 Note, the user will still need to enter the names of the motions for the program to match the model
 predictions with human-readable mnemonics.
-<br>
+<br><br>
 The --bias=off flag will turn off bias-correction in the DSP driver (See Program Flow).
-<br>
+<br><br>
 The --bias=save flag will save the bias weights used by the DSP driver in a bias.config file.
-<br>
+<br><br>
 The --bias=load flag will load saved bias weights from a bias.config file.
