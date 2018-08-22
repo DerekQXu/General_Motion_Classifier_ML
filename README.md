@@ -23,8 +23,8 @@ run on Windows systems due to the use of POSIX-defined multi-processing, synchro
 To run General Motion Classifier with the default CNN+LSTM model, first modify bctl.txt such that the first
 line is the MAC address of your computer and the second line is the MAC address of your Sensortile:
 <br><br>
-Next, run the following command:```C $ make program```
+Next, run the following command:```$ make program```
 <br><br>
 Turn on your Sensortile using software from Tutorial 8 of the UCLA STMicroelectronics Tutorials.
 <br><br>
-Run the following command:```C $ ./main (or $ sudo ./main)```
+Run the following command:```$ ./main (or $ sudo ./main)```
