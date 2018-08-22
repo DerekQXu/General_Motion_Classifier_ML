@@ -19,12 +19,32 @@ Note, the current program cannot run on the Beaglebone platform as the space req
 too large (despite Keras/Theano supporting 32bit ARM systems). Rather, it is meant for prototyping valid
 machine learning models before being ported onto embedded platforms. The current program also cannot
 run on Windows systems due to the use of POSIX-defined multi-processing, synchronization, and IPC.
+### Dependencies
+Keras v2.0.8
+<br>
+Tensorflow (Keras backend) v1.8.0
+<br>
+LiquidDSP v1.3.1
 ### Getting Started
 To run General Motion Classifier with the default CNN+LSTM model, first modify bctl.txt such that the first
 line is the MAC address of your computer and the second line is the MAC address of your Sensortile:
 <br><br>
-Next, run the following command:```$ make program```
+Next, run the following command: ```$ make program```
 <br><br>
 Turn on your Sensortile using software from Tutorial 8 of the UCLA STMicroelectronics Tutorials.
 <br><br>
-Run the following command:```$ ./main (or $ sudo ./main)```
+Run the following command: ```$ ./main (or $ sudo ./main)```
+### Flags and Extensions
+The following describes the available flags:
+<br>
+```./main [-r] [--bias=[status]]```
+<br>
+The -r flag will skip the training step and perform real-time classification with an existing model.m5 file.
+Note, the user will still need to enter the names of the motions for the program to match the model
+predictions with human-readable mnemonics.
+<br>
+The --bias=off flag will turn off bias-correction in the DSP driver (See Program Flow).
+<br>
+The --bias=save flag will save the bias weights used by the DSP driver in a bias.config file.
+<br>
+The --bias=load flag will load saved bias weights from a bias.config file.
