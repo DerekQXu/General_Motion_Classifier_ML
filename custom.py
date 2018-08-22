@@ -60,7 +60,7 @@ def train_func(keras_training_X, keras_training_Y, training_size, classif_num, q
     model.add(LSTM(100))
     model.add(Dense(classif_num, activation='sigmoid'))
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-    model.fit(keras_training_X, keras_training_Y, epochs = 3, batch_size = 64)
+    model.fit(keras_training_X, keras_training_Y, epochs = 5, batch_size = 64)
 
     # save model
     model.save('model.h5')
