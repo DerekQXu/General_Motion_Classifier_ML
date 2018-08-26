@@ -46,3 +46,6 @@ The --bias=off flag will turn off bias-correction in the DSP driver (See Program
 The --bias=save flag will save the bias weights used by the DSP driver in a bias.config file.
 <br><br>
 The --bias=load flag will load saved bias weights from a bias.config file.
+### Acknowledgements
+Thanks to Professor Kaiser for guidance with project. <br>
+Thanks to Charles Zaloom for initial DSP software.
