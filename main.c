@@ -56,7 +56,7 @@ int bias_init_flag;
 int bias_flag;
 
 // flags
-int bias_off_flag = 0;
+int bias_off_flag = 1;
 int bias_save_flag = 0;
 int bias_load_flag = 0;
 int run_flag = 0;
@@ -106,12 +106,12 @@ int init_filter(){
   // set filter parameters (butterworth?)
   struct filter_options butter;
   butter.order = 2;
-  butter.fc = 0.4;
-  butter.f0 = 0.0f;
+  butter.fc = 0.20f;
+  butter.f0 = 0.11f;
   butter.Ap = 3.0f;
-  butter.As = 60.0f;
+  butter.As = 10.0f;
   butter.ftype = LIQUID_IIRDES_BUTTER;
-  butter.btype = LIQUID_IIRDES_LOWPASS;
+  butter.btype = LIQUID_IIRDES_BANDPASS;
   butter.format = LIQUID_IIRDES_SOS;
 
   // create filters
@@ -416,8 +416,8 @@ int main (int argc, char **argv)
         break;
       case 'b':
         if (optarg[0] == 'o'){
-          printf("Bias-Off Mode.\n");
-          bias_off_flag = 1;
+          printf("Bias-On Mode.\n");
+          bias_off_flag = 0;
         }
         else if (optarg[0] == 's'){
           printf("Bias-Save Mode.\n");
